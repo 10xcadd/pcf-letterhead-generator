@@ -4,10 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PCF Letterhead Generator</title>
-<link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#1b3a8a">
-<link rel="icon" href="icon-192.png">
-<link rel="apple-touch-icon" href="icon-192.png">
 <style>
   :root{
     --pink:#e91e8c; --blue:#1b3a8a; --teal:#17a2b8; --bg:#f4f6fa; --panel:#ffffff; --line:#e2e6ee;
@@ -206,10 +202,26 @@ Mumbai."></textarea>
 
     <div class="group">
       <h3>Closing</h3>
-      <label>Line 1 (e.g. "Thanking you")</label>
-      <input type="text" id="c_line1" placeholder="Thanking you">
-      <label>Line 2 (e.g. "Yours sincerely,")</label>
-      <input type="text" id="c_line2" placeholder="Yours sincerely,">
+      <label>Line 1</label>
+      <select id="c1_choice">
+        <option value="Thanking you,">Thanking you,</option>
+        <option value="With Regards,">With Regards,</option>
+        <option value="Regards,">Regards,</option>
+        <option value="Warm Regards,">Warm Regards,</option>
+        <option value="Best Regards,">Best Regards,</option>
+        <option value="__custom__">Custom...</option>
+      </select>
+      <input type="text" id="c1_custom" style="display:none; margin-top:6px;" placeholder="Type your own">
+
+      <label>Line 2</label>
+      <select id="c2_choice">
+        <option value="Yours sincerely,">Yours sincerely,</option>
+        <option value="Yours faithfully,">Yours faithfully,</option>
+        <option value="Yours truly,">Yours truly,</option>
+        <option value="__custom__">Custom...</option>
+      </select>
+      <input type="text" id="c2_custom" style="display:none; margin-top:6px;" placeholder="Type your own">
+
       <div class="row">
         <div class="col">
           <label>Font</label>
@@ -350,6 +362,8 @@ function drawParagraphs(context, text, x, y, maxWidth, lh){
 
 function draw(){
   ctx.clearRect(0,0,CANVAS_W,CANVAS_H);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
   ctx.drawImage(bgImg, 0, 0, CANVAS_W, CANVAS_H);
 
   ctx.fillStyle = '#1a1a1a';
@@ -461,8 +475,24 @@ wireGroup('c', S.c);
 document.getElementById('r_block').addEventListener('input', e => { S.r.text = e.target.value; scheduleDraw(); });
 document.getElementById('subj_text').addEventListener('input', e => { S.subj.text = e.target.value; scheduleDraw(); });
 document.getElementById('body_text').addEventListener('input', e => { S.body.text = e.target.value; scheduleDraw(); });
-document.getElementById('c_line1').addEventListener('input', e => { S.c.line1 = e.target.value; scheduleDraw(); });
-document.getElementById('c_line2').addEventListener('input', e => { S.c.line2 = e.target.value; scheduleDraw(); });
+function wireClosingChoice(choiceId, customId, key){
+  const choice = document.getElementById(choiceId);
+  const custom = document.getElementById(customId);
+  choice.addEventListener('change', () => {
+    if(choice.value === '__custom__'){
+      custom.style.display = 'block';
+      S.c[key] = custom.value;
+    } else {
+      custom.style.display = 'none';
+      S.c[key] = choice.value;
+    }
+    scheduleDraw();
+  });
+  custom.addEventListener('input', () => { S.c[key] = custom.value; scheduleDraw(); });
+  return choice;
+}
+const c1Choice = wireClosingChoice('c1_choice', 'c1_custom', 'line1');
+const c2Choice = wireClosingChoice('c2_choice', 'c2_custom', 'line2');
 
 // Date picker -> formatted text
 function ordinal(n){
@@ -578,7 +608,7 @@ document.getElementById('loadSampleBtn').addEventListener('click', () => {
   S.subj.bold = true; S.subj.italic = true;
   S.sal.text = 'Respected Madam,';
   S.body.text = 'I, Mehmood Hakimi, respectfully write this letter seeking your kind support for the admission of Miss Kehkasha Fatma, the daughter of my close friend Mr. Mohammed Ali, to the First Year Junior College (FYJC) - Science Stream at Anjuman-I-Islam Dr. M. I. J. Girls High School & Junior College, Bandra, Mumbai.\n\nMiss Kehkasha Fatma has successfully completed her SSC (Std. X) examination with 60.20% marks. She is sincere, disciplined, and highly motivated to pursue her higher secondary education in the Science stream.\n\nI humbly request you to kindly consider her case sympathetically and extend your support in granting her admission to the Science Stream.';
-  S.c.line1 = 'Thanking you';
+  S.c.line1 = 'Thanking you,';
   S.c.line2 = 'Yours sincerely,';
 
   setField('r_block', S.r.text);
@@ -587,31 +617,31 @@ document.getElementById('loadSampleBtn').addEventListener('click', () => {
   document.getElementById('subj_italic').classList.add('active');
   salChoice.value = 'Respected Madam,';
   setField('body_text', S.body.text);
-  setField('c_line1', S.c.line1); setField('c_line2', S.c.line2);
+  c1Choice.value = 'Thanking you,'; document.getElementById('c1_custom').style.display='none';
+  c2Choice.value = 'Yours sincerely,'; document.getElementById('c2_custom').style.display='none';
   draw();
 });
 
 document.getElementById('clearBtn').addEventListener('click', () => {
-  ['r_block','subj_text','body_text','c_line1','c_line2'].forEach(id => setField(id, ''));
+  ['r_block','subj_text','body_text'].forEach(id => setField(id, ''));
   document.getElementById('date_picker').value = '';
   salChoice.value = 'Respected Sir/Madam,';
   salCustom.value = ''; salCustom.style.display='none'; salCustomLabel.style.display='none';
+  c1Choice.value = 'Thanking you,'; document.getElementById('c1_custom').value=''; document.getElementById('c1_custom').style.display='none';
+  c2Choice.value = 'Yours sincerely,'; document.getElementById('c2_custom').value=''; document.getElementById('c2_custom').style.display='none';
   S.date.text=''; S.r.text='';
-  S.subj.text=''; S.sal.text='Respected Sir/Madam,'; S.body.text=''; S.c.line1=''; S.c.line2='';
+  S.subj.text=''; S.sal.text='Respected Sir/Madam,'; S.body.text=''; S.c.line1='Thanking you,'; S.c.line2='Yours sincerely,';
   S.sigOffset = 0; sigOffsetInp.value = 0; sigOffsetVal.textContent = '0 px';
   draw();
 });
 
-// initial salutation default
+// initial defaults
 S.sal.text = 'Respected Sir/Madam,';
 salChoice.value = 'Respected Sir/Madam,';
-</script>
-<script>
-if('serviceWorker' in navigator){
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-  });
-}
+S.c.line1 = 'Thanking you,';
+S.c.line2 = 'Yours sincerely,';
+c1Choice.value = 'Thanking you,';
+c2Choice.value = 'Yours sincerely,';
 </script>
 </body>
 </html>
