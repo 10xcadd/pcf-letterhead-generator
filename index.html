@@ -88,6 +88,26 @@
 <div class="app">
   <div class="panel" id="panel">
 
+    <div class="group" style="background:#fff7fb; border-color:#f3c9dd;">
+      <h3>Paste Full Letter (auto-fill)</h3>
+      <label>Paste a complete letter (like from WhatsApp/Word) and it will fill in To, Subject, Salutation, Body and Closing below automatically.</label>
+      <textarea id="paste_full" rows="8" placeholder="To,
+Mr. Abdul Majid Khan (Lala)
+Managing Director
+Al Majid Tours &amp; Travels
+Subject: Request for Contribution of Wheelchairs
+Respected Mr. Abdul Majid Sahab,
+Greetings from Positive Change Foundation.
+We are writing to request...
+...
+With regards,
+Yours sincerely,"></textarea>
+      <div class="btnbar">
+        <button class="btn btn-primary" id="parseBtn" type="button">Parse &amp; Fill Fields</button>
+      </div>
+      <div class="note">Best-effort parsing — always double check the fields below after, and fix anything it got wrong.</div>
+    </div>
+
     <div class="group">
       <h3>Date</h3>
       <label>Pick a date</label>
@@ -493,6 +513,103 @@ function wireClosingChoice(choiceId, customId, key){
 }
 const c1Choice = wireClosingChoice('c1_choice', 'c1_custom', 'line1');
 const c2Choice = wireClosingChoice('c2_choice', 'c2_custom', 'line2');
+
+// ---- Paste Full Letter parser ----
+function setDropdownOrCustom(selectEl, customEl, customLabelEl, value, stateSetter){
+  const opts = Array.from(selectEl.options).map(o => o.value);
+  const match = opts.find(o => o.toLowerCase() === (value || '').toLowerCase());
+  if(match){
+    selectEl.value = match;
+    customEl.style.display = 'none';
+    if(customLabelEl) customLabelEl.style.display = 'none';
+    stateSetter(match);
+  } else if(value){
+    selectEl.value = '__custom__';
+    customEl.style.display = 'block';
+    if(customLabelEl) customLabelEl.style.display = 'block';
+    customEl.value = value;
+    stateSetter(value);
+  }
+}
+
+function parseLetter(text){
+  let lines = text.split(/\r?\n/).map(l => l.trim());
+  while(lines.length && lines[0] === '') lines.shift();
+
+  let i = 0;
+  if(lines[i] && /^to[,:]?$/i.test(lines[i])) i++;
+
+  const subjectRe = /^subject\s*:\s*/i;
+  const salutationRe = /^(respected|dear|to whomsoever)/i;
+  const closing1Re = /^(thanking you|with regards|warm regards|best regards|regards)[,.]?$/i;
+  const closing2Re = /^(yours sincerely|yours faithfully|yours truly)[,.]?$/i;
+
+  const recipient = [];
+  while(i < lines.length && lines[i] !== '' && !subjectRe.test(lines[i]) && !salutationRe.test(lines[i])){
+    recipient.push(lines[i]); i++;
+  }
+  while(i < lines.length && lines[i] === '') i++;
+
+  let subject = '';
+  if(i < lines.length && subjectRe.test(lines[i])){
+    subject = lines[i].replace(subjectRe, '').trim(); i++;
+  }
+  while(i < lines.length && lines[i] === '') i++;
+
+  let salutation = '';
+  if(i < lines.length && salutationRe.test(lines[i])){
+    salutation = lines[i]; i++;
+  }
+  while(i < lines.length && lines[i] === '') i++;
+
+  const bodyLines = [];
+  let closing1 = '', closing2 = '';
+  while(i < lines.length){
+    if(closing1Re.test(lines[i])){
+      closing1 = lines[i]; i++;
+      while(i < lines.length && lines[i] === '') i++;
+      if(i < lines.length && closing2Re.test(lines[i])){ closing2 = lines[i]; i++; }
+      break;
+    }
+    if(closing2Re.test(lines[i]) && !closing1){
+      closing2 = lines[i]; i++;
+      break;
+    }
+    bodyLines.push(lines[i]); i++;
+  }
+  while(bodyLines.length && bodyLines[bodyLines.length-1] === '') bodyLines.pop();
+
+  return {
+    recipient: recipient.join('\n'),
+    subject, salutation,
+    body: bodyLines.join('\n'),
+    closing1, closing2
+  };
+}
+
+document.getElementById('parseBtn').addEventListener('click', () => {
+  const text = document.getElementById('paste_full').value;
+  if(!text.trim()) return;
+  const p = parseLetter(text);
+
+  S.r.text = p.recipient;
+  setField('r_block', p.recipient);
+
+  S.subj.text = p.subject;
+  setField('subj_text', p.subject);
+
+  setDropdownOrCustom(salChoice, salCustom, salCustomLabel, p.salutation, v => S.sal.text = v);
+  S.body.text = p.body;
+  setField('body_text', p.body);
+
+  if(p.closing1){
+    setDropdownOrCustom(c1Choice, document.getElementById('c1_custom'), null, p.closing1, v => S.c.line1 = v);
+  }
+  if(p.closing2){
+    setDropdownOrCustom(c2Choice, document.getElementById('c2_custom'), null, p.closing2, v => S.c.line2 = v);
+  }
+  draw();
+});
 
 // Date picker -> formatted text
 function ordinal(n){
