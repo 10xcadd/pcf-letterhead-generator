@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PCF Letterhead Generator</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1b3a8a">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
   :root{
     --pink:#e91e8c; --blue:#1b3a8a; --teal:#17a2b8; --bg:#f4f6fa; --panel:#ffffff; --line:#e2e6ee;
@@ -776,6 +780,13 @@ S.c.line1 = 'Thanking you,';
 S.c.line2 = 'Yours sincerely,';
 c1Choice.value = 'Thanking you,';
 c2Choice.value = 'Yours sincerely,';
+</script>
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
 </script>
 </body>
 </html>
