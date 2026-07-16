@@ -261,10 +261,14 @@ Mumbai."></textarea>
 
     <div class="group">
       <h3>Signature Block Position</h3>
-      <div class="note">Positions itself automatically below your closing lines. Use this only to fine-tune.</div>
-      <input type="range" id="sig_offset" min="-500" max="500" step="10" value="0">
-      <div class="sliderval" id="sig_offset_val">0 px</div>
-      <div class="warn" id="sigWarn">⚠️ The signature block is running close to the footer. Shorten the body text, reduce font size, or nudge the slider up.</div>
+      <div class="note">Positions itself automatically below your closing lines. Use these sliders to nudge it left/right and up/down.</div>
+      <label>Left ⟷ Right</label>
+      <input type="range" id="sig_offset_x" min="-200" max="600" step="10" value="0">
+      <div class="sliderval" id="sig_offset_x_val">0 px</div>
+      <label>Up ⟷ Down</label>
+      <input type="range" id="sig_offset_y" min="-500" max="500" step="10" value="0">
+      <div class="sliderval" id="sig_offset_y_val">0 px</div>
+      <div class="warn" id="sigWarn">⚠️ The signature block is running close to the footer. Shorten the body text, reduce font size, or nudge it up.</div>
     </div>
 
     <div class="btnbar">
@@ -330,7 +334,8 @@ const S = {
   sal:    {text:'', font:'Calibri', size:12, bold:false, italic:false},
   body:   {text:'', font:'Calibri', size:12, bold:false, italic:false},
   c:      {line1:'', line2:'', font:'Calibri', size:12, bold:false, italic:false},
-  sigOffset: 0
+  sigOffsetX: 0,
+  sigOffsetY: 0
 };
 
 const cv = document.getElementById('cv');
@@ -433,21 +438,24 @@ function draw(){
     if(S.c.line2){ ctx.fillText(S.c.line2, LEFT, cy); cy += lineHeightPx(S.c, true); }
   }
 
-  // Signature block: stamp + fixed name/title/org, auto-positioned + manual nudge
-  let sigY = Math.max(cy + 40, 1200) + S.sigOffset;
+  // Signature block: stamp + fixed name/title/org, auto-positioned + manual nudge (X and Y)
+  let sigY = Math.max(cy + 40, 1200) + S.sigOffsetY;
   const blockH = STAMP_H + 230;
   if(sigY + blockH > SAFE_BOTTOM){ sigY = SAFE_BOTTOM - blockH; }
-  document.getElementById('sigWarn').style.display = (Math.max(cy + 40, 1200) + S.sigOffset + blockH > SAFE_BOTTOM) ? 'block' : 'none';
+  document.getElementById('sigWarn').style.display = (Math.max(cy + 40, 1200) + S.sigOffsetY + blockH > SAFE_BOTTOM) ? 'block' : 'none';
 
-  ctx.drawImage(stampImg, SIG_X, sigY, STAMP_W, STAMP_H);
+  const sigX = SIG_X + S.sigOffsetX;
+  const sigTextX = LEFT + S.sigOffsetX;
+
+  ctx.drawImage(stampImg, sigX, sigY, STAMP_W, STAMP_H);
   let ty = sigY + STAMP_H + 55;
   ctx.font = `bold ${Math.round(14*PT_TO_PX)}px ${FONT_STACKS['Calibri']}`;
-  ctx.fillText('Mehmood Hakimi', LEFT, ty);
+  ctx.fillText('Mehmood Hakimi', sigTextX, ty);
   ty += Math.round(11*PT_TO_PX*1.5);
   ctx.font = `${Math.round(11*PT_TO_PX)}px ${FONT_STACKS['Calibri']}`;
-  ctx.fillText('Founder & National President', LEFT, ty);
+  ctx.fillText('Founder & National President', sigTextX, ty);
   ty += Math.round(11*PT_TO_PX*1.5);
-  ctx.fillText('Positive Change Foundation', LEFT, ty);
+  ctx.fillText('Positive Change Foundation', sigTextX, ty);
 }
 
 let redrawTimer = null;
@@ -642,11 +650,19 @@ salChoice.addEventListener('change', () => {
 });
 salCustom.addEventListener('input', () => { S.sal.text = salCustom.value; scheduleDraw(); });
 
-const sigOffsetInp = document.getElementById('sig_offset');
-const sigOffsetVal = document.getElementById('sig_offset_val');
-sigOffsetInp.addEventListener('input', () => {
-  S.sigOffset = parseInt(sigOffsetInp.value, 10) || 0;
-  sigOffsetVal.textContent = S.sigOffset + ' px';
+const sigOffsetXInp = document.getElementById('sig_offset_x');
+const sigOffsetXVal = document.getElementById('sig_offset_x_val');
+sigOffsetXInp.addEventListener('input', () => {
+  S.sigOffsetX = parseInt(sigOffsetXInp.value, 10) || 0;
+  sigOffsetXVal.textContent = S.sigOffsetX + ' px';
+  scheduleDraw();
+});
+
+const sigOffsetYInp = document.getElementById('sig_offset_y');
+const sigOffsetYVal = document.getElementById('sig_offset_y_val');
+sigOffsetYInp.addEventListener('input', () => {
+  S.sigOffsetY = parseInt(sigOffsetYInp.value, 10) || 0;
+  sigOffsetYVal.textContent = S.sigOffsetY + ' px';
   scheduleDraw();
 });
 
@@ -748,7 +764,8 @@ document.getElementById('clearBtn').addEventListener('click', () => {
   c2Choice.value = 'Yours sincerely,'; document.getElementById('c2_custom').value=''; document.getElementById('c2_custom').style.display='none';
   S.date.text=''; S.r.text='';
   S.subj.text=''; S.sal.text='Respected Sir/Madam,'; S.body.text=''; S.c.line1='Thanking you,'; S.c.line2='Yours sincerely,';
-  S.sigOffset = 0; sigOffsetInp.value = 0; sigOffsetVal.textContent = '0 px';
+  S.sigOffsetX = 0; sigOffsetXInp.value = 0; sigOffsetXVal.textContent = '0 px';
+  S.sigOffsetY = 0; sigOffsetYInp.value = 0; sigOffsetYVal.textContent = '0 px';
   draw();
 });
 
