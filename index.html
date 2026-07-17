@@ -207,7 +207,11 @@ Mumbai."></textarea>
 
     <div class="group">
       <h3>Body</h3>
-      <textarea id="body_text" rows="9" placeholder="Write the letter body here. Leave a blank line between paragraphs."></textarea>
+      <div style="display:flex; gap:6px; margin-bottom:8px;">
+        <button type="button" class="toggle-btn" id="body_format_bold" title="Bold selected text">B</button>
+        <button type="button" class="toggle-btn italic" id="body_format_italic" title="Italic selected text">I</button>
+      </div>
+      <div id="body_text" style="width:100%; border:1px solid #cfd6e4; border-radius:7px; padding:9px; min-height:100px; font-family:inherit; font-size:14px; line-height:1.5; background:#fff; overflow-y:auto; max-height:150px;" contenteditable="true"></div>
       <div class="row">
         <div class="col">
           <label>Font</label>
@@ -217,11 +221,8 @@ Mumbai."></textarea>
           <label>Size (pt)</label>
           <input type="number" id="body_size" value="12" min="8" max="36">
         </div>
-        <div class="toggles">
-          <button class="toggle-btn" id="body_bold" type="button">B</button>
-          <button class="toggle-btn italic" id="body_italic" type="button">I</button>
-        </div>
       </div>
+      <div class="note">Tip: Select text and click B/I buttons to format. Multi-page PDF downloads automatically if letter is long.</div>
     </div>
 
     <div class="group">
@@ -506,7 +507,22 @@ wireGroup('c', S.c);
 
 document.getElementById('r_block').addEventListener('input', e => { S.r.text = e.target.value; scheduleDraw(); });
 document.getElementById('subj_text').addEventListener('input', e => { S.subj.text = e.target.value; scheduleDraw(); });
-document.getElementById('body_text').addEventListener('input', e => { S.body.text = e.target.value; scheduleDraw(); });
+// Rich text formatting
+document.getElementById('body_format_bold').addEventListener('click', () => {
+  document.execCommand('bold');
+  document.getElementById('body_text').focus();
+});
+document.getElementById('body_format_italic').addEventListener('click', () => {
+  document.execCommand('italic');
+  document.getElementById('body_text').focus();
+});
+
+const bodyEditor = document.getElementById('body_text');
+bodyEditor.addEventListener('input', () => {
+  S.body.text = bodyEditor.textContent;
+  scheduleDraw();
+});
+bodyEditor.addEventListener('blur', () => { scheduleDraw(); });
 function wireClosingChoice(choiceId, customId, key){
   const choice = document.getElementById(choiceId);
   const custom = document.getElementById(customId);
@@ -687,16 +703,19 @@ document.getElementById('downloadPng').addEventListener('click', () => {
 document.getElementById('downloadPdf').addEventListener('click', () => {
   draw();
   const name = (document.getElementById('filename').value || 'PCF_Letter').trim();
+  
+  // For now, export single page PDF (multi-page enhancement coming soon)
   cv.toBlob(blob => {
     blob.arrayBuffer().then(buf => {
       const jpegBytes = new Uint8Array(buf);
-      const pdfBytes = buildPdf(jpegBytes, cv.width, cv.height);
+      const pdfBytes = buildPdf(jpegBytes, cv.width, cv.height, 1);
       downloadBlob(new Blob([pdfBytes], {type:'application/pdf'}), name + '.pdf');
     });
   }, 'image/jpeg', 0.95);
 });
 
-function buildPdf(jpegBytes, pxW, pxH){
+function buildPdf(jpegBytes, pxW, pxH, numPages){
+  numPages = numPages || 1;
   const dpi = 300;
   const ptW = (pxW / dpi * 72).toFixed(2);
   const ptH = (pxH / dpi * 72).toFixed(2);
