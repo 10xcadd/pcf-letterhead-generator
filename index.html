@@ -93,20 +93,23 @@
   <div class="panel" id="panel">
 
     <div class="group" style="background:#fff7fb; border-color:#f3c9dd;">
-      <h3>Paste Full Letter (Rich Text)</h3>
-      <div style="display:flex; gap:6px; margin-bottom:8px;">
-        <button type="button" class="toggle-btn" id="parse_bold">B</button>
-        <button type="button" class="toggle-btn italic" id="parse_italic">I</button>
-        <label style="flex:1; margin:0; display:flex; align-items:center; gap:6px;">
-          <input type="checkbox" id="parse_format_mode" checked> Apply to Selection
-        </label>
-        <select id="parse_font" style="flex:1; max-width:150px;"></select>
-        <input type="number" id="parse_size" value="12" min="8" max="36" style="width:60px;">
-      </div>
-      <div id="paste_full" style="width:100%; border:1px solid #cfd6e4; border-radius:7px; padding:9px; min-height:100px; font-family:inherit; font-size:14px; line-height:1.5; background:#fff; overflow-y:auto; max-height:150px;" contenteditable="true"></div>
+      <h3>Paste Full Letter (auto-fill)</h3>
+      <label>Paste a complete letter (like from WhatsApp/Word) and it will fill in To, Subject, Salutation, Body and Closing below automatically.</label>
+      <textarea id="paste_full" rows="8" placeholder="To,
+Mr. Abdul Majid Khan (Lala)
+Managing Director
+Al Majid Tours &amp; Travels
+Subject: Request for Contribution of Wheelchairs
+Respected Mr. Abdul Majid Sahab,
+Greetings from Positive Change Foundation.
+We are writing to request...
+...
+With regards,
+Yours sincerely,"></textarea>
       <div class="btnbar">
         <button class="btn btn-primary" id="parseBtn" type="button">Parse &amp; Fill Fields</button>
       </div>
+      <div class="note">Best-effort parsing — always double check the fields below after, and fix anything it got wrong.</div>
     </div>
 
     <div class="group">
@@ -261,15 +264,27 @@ Mumbai."></textarea>
     </div>
 
     <div class="group">
-      <h3>Signature Block</h3>
+      <h3>Signature Block Position</h3>
       <label>
         <input type="checkbox" id="show_stamp" checked> Include Stamp &amp; Signature
       </label>
-      <div style="margin-top:12px;">
-        <label>Position on Page (Up ↔ Down)</label>
-        <input type="range" id="sig_offset_y" min="-300" max="300" step="10" value="0">
-        <div class="sliderval" id="sig_offset_y_val">0 px</div>
+      <div style="margin-top:12px; padding:10px; background:#f9f9f9; border-radius:6px;">
+        <label style="display:block; font-weight:bold; margin-bottom:8px; font-size:13px;">Show stamp on:</label>
+        <label style="display:block; margin:6px 0;">
+          <input type="checkbox" id="stamp_page1" checked> Page 1
+        </label>
+        <label style="display:block; margin:6px 0;">
+          <input type="checkbox" id="stamp_page2"> Page 2
+        </label>
       </div>
+      <div class="note">Positions itself automatically below your closing lines. Use these sliders to nudge it left/right and up/down.</div>
+      <label>Left ⟷ Right</label>
+      <input type="range" id="sig_offset_x" min="-200" max="600" step="10" value="0">
+      <div class="sliderval" id="sig_offset_x_val">0 px</div>
+      <label>Up ⟷ Down</label>
+      <input type="range" id="sig_offset_y" min="-500" max="500" step="10" value="0">
+      <div class="sliderval" id="sig_offset_y_val">0 px</div>
+      <div class="warn" id="sigWarn">⚠️ The signature block is running close to the footer. Shorten the body text, reduce font size, or nudge it up.</div>
     </div>
 
     <div class="btnbar">
@@ -335,6 +350,7 @@ const S = {
   sal:    {text:'', font:'Calibri', size:12, bold:false, italic:false},
   body:   {text:'', font:'Calibri', size:12, bold:false, italic:false},
   c:      {line1:'', line2:'', font:'Calibri', size:12, bold:false, italic:false},
+  sigOffsetX: 0,
   sigOffsetY: 0
 };
 
@@ -353,7 +369,7 @@ function fontStr(o){
   const px = Math.round(o.size * PT_TO_PX);
   return `${o.italic ? 'italic ' : ''}${o.bold ? 'bold ' : ''}${px}px ${FONT_STACKS[o.font]}`;
 }
-function lineHeightPx(o, tight){ return Math.round(o.size * PT_TO_PX * (tight ? 1.15 : 1.45)); }
+function lineHeightPx(o, tight){ return Math.round(o.size * PT_TO_PX * (tight ? 1.15 : 1.25)); }
 
 function wrapLines(context, text, maxWidth){
   if(!text) return [];
@@ -377,10 +393,10 @@ function drawParagraphs(context, text, x, y, maxWidth, lh){
   const paragraphs = text.split('\n');
   let cy = y;
   for(const para of paragraphs){
-    if(para.trim() === ''){ cy += lh * 0.55; continue; }
+    if(para.trim() === ''){ cy += lh * 0.3; continue; }
     const lines = wrapLines(context, para, maxWidth);
     for(const line of lines){ context.fillText(line, x, cy); cy += lh; }
-    cy += lh * 0.2;
+    cy += lh * 0.1;
   }
   return cy;
 }
@@ -411,19 +427,19 @@ function draw(){
     recipientLines.forEach(t => {
       wrapLines(ctx, t, WIDTH).forEach(l => { ctx.fillText(l, LEFT, cy); cy += lineHeightPx(S.r, true); });
     });
-    cy += 40;
+    cy += 25;
   }
 
   if(S.subj.text){
     ctx.font = fontStr(S.subj);
     wrapLines(ctx, 'Subject: ' + S.subj.text, WIDTH).forEach(l => { ctx.fillText(l, LEFT, cy); cy += lineHeightPx(S.subj); });
-    cy += 40;
+    cy += 20;
   }
 
   if(S.sal.text){
     ctx.font = fontStr(S.sal);
     wrapLines(ctx, S.sal.text, WIDTH).forEach(l => { ctx.fillText(l, LEFT, cy); cy += lineHeightPx(S.sal); });
-    cy += 30;
+    cy += 15;
   }
 
   if(S.body.text){
@@ -438,15 +454,19 @@ function draw(){
     if(S.c.line2){ ctx.fillText(S.c.line2, LEFT, cy); cy += lineHeightPx(S.c, true); }
   }
 
-  // Signature block: stamp + fixed name/title/org - ONLY if checkbox is checked
+  // Signature block: stamp + fixed name/title/org, auto-positioned + manual nudge (X and Y)
+  let sigY = Math.max(cy + 40, 1200) + S.sigOffsetY;
+  const blockH = STAMP_H + 230;
+  if(sigY + blockH > SAFE_BOTTOM){ sigY = SAFE_BOTTOM - blockH; }
+  document.getElementById('sigWarn').style.display = (Math.max(cy + 40, 1200) + S.sigOffsetY + blockH > SAFE_BOTTOM) ? 'block' : 'none';
+
+  const sigX = SIG_X + S.sigOffsetX;
+  const sigTextX = LEFT + S.sigOffsetX;
+
+  // Only draw stamp if checkbox is checked
   const showStamp = document.getElementById('show_stamp')?.checked ?? true;
   
   if(showStamp){
-    // Position stamp 180px above footer (fixed location)
-    let sigY = 2900 - 180 - STAMP_H + S.sigOffsetY;
-    const sigX = SIG_X;
-    const sigTextX = LEFT;
-
     ctx.drawImage(stampImg, sigX, sigY, STAMP_W, STAMP_H);
     let ty = sigY + STAMP_H + 55;
     ctx.font = `bold ${Math.round(14*PT_TO_PX)}px ${FONT_STACKS['Calibri']}`;
@@ -541,55 +561,6 @@ function setDropdownOrCustom(selectEl, customEl, customLabelEl, value, stateSett
   }
 }
 
-// Rich text formatting for parse box
-const parseBold = document.getElementById('parse_bold');
-const parseItalic = document.getElementById('parse_italic');
-const parseFormatMode = document.getElementById('parse_format_mode');
-const parseFont = document.getElementById('parse_font');
-const parseSize = document.getElementById('parse_size');
-
-FONT_NAMES.forEach(n => {
-  const opt = document.createElement('option');
-  opt.value = n; opt.textContent = n;
-  parseFont.appendChild(opt);
-});
-parseFont.value = 'Calibri';
-
-parseBold.addEventListener('click', () => {
-  if(parseFormatMode.checked){
-    document.execCommand('bold');
-  } else {
-    const el = document.getElementById('paste_full');
-    el.style.fontWeight = el.style.fontWeight === 'bold' ? 'normal' : 'bold';
-  }
-  document.getElementById('paste_full').focus();
-});
-
-parseItalic.addEventListener('click', () => {
-  if(parseFormatMode.checked){
-    document.execCommand('italic');
-  } else {
-    const el = document.getElementById('paste_full');
-    el.style.fontStyle = el.style.fontStyle === 'italic' ? 'normal' : 'italic';
-  }
-  document.getElementById('paste_full').focus();
-});
-
-parseFont.addEventListener('change', () => {
-  if(parseFormatMode.checked){
-    document.execCommand('fontName', false, parseFont.value);
-  }
-  document.getElementById('paste_full').focus();
-});
-
-parseSize.addEventListener('change', () => {
-  if(parseFormatMode.checked){
-    const sz = parseSize.value;
-    document.execCommand('fontSize', false, Math.ceil(sz / 2));
-  }
-  document.getElementById('paste_full').focus();
-});
-
 function parseLetter(text){
   let lines = text.split(/\r?\n/).map(l => l.trim());
   while(lines.length && lines[0] === '') lines.shift();
@@ -646,7 +617,7 @@ function parseLetter(text){
 }
 
 document.getElementById('parseBtn').addEventListener('click', () => {
-  const text = document.getElementById('paste_full').textContent;
+  const text = document.getElementById('paste_full').value;
   if(!text.trim()) return;
   const p = parseLetter(text);
 
@@ -700,6 +671,14 @@ salChoice.addEventListener('change', () => {
 });
 salCustom.addEventListener('input', () => { S.sal.text = salCustom.value; scheduleDraw(); });
 
+const sigOffsetXInp = document.getElementById('sig_offset_x');
+const sigOffsetXVal = document.getElementById('sig_offset_x_val');
+sigOffsetXInp.addEventListener('input', () => {
+  S.sigOffsetX = parseInt(sigOffsetXInp.value, 10) || 0;
+  sigOffsetXVal.textContent = S.sigOffsetX + ' px';
+  scheduleDraw();
+});
+
 const sigOffsetYInp = document.getElementById('sig_offset_y');
 const sigOffsetYVal = document.getElementById('sig_offset_y_val');
 sigOffsetYInp.addEventListener('input', () => {
@@ -708,8 +687,10 @@ sigOffsetYInp.addEventListener('input', () => {
   scheduleDraw();
 });
 
-// Stamp checkbox
+// Stamp checkbox listeners
 document.getElementById('show_stamp').addEventListener('change', scheduleDraw);
+document.getElementById('stamp_page1').addEventListener('change', scheduleDraw);
+document.getElementById('stamp_page2').addEventListener('change', scheduleDraw);
 
 function downloadBlob(blob, filename){
   const url = URL.createObjectURL(blob);
@@ -809,6 +790,7 @@ document.getElementById('clearBtn').addEventListener('click', () => {
   c2Choice.value = 'Yours sincerely,'; document.getElementById('c2_custom').value=''; document.getElementById('c2_custom').style.display='none';
   S.date.text=''; S.r.text='';
   S.subj.text=''; S.sal.text='Respected Sir/Madam,'; S.body.text=''; S.c.line1='Thanking you,'; S.c.line2='Yours sincerely,';
+  S.sigOffsetX = 0; sigOffsetXInp.value = 0; sigOffsetXVal.textContent = '0 px';
   S.sigOffsetY = 0; sigOffsetYInp.value = 0; sigOffsetYVal.textContent = '0 px';
   draw();
 });
