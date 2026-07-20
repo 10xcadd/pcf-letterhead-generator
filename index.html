@@ -222,6 +222,9 @@ Mumbai."></textarea>
           <button class="toggle-btn italic" id="body_italic" type="button">I</button>
         </div>
       </div>
+      <div class="note">Blank line gap (space taken by an empty line when you press Enter twice between paragraphs). Lower this if paragraph breaks are eating too much space.</div>
+      <input type="range" id="body_blank_gap" min="0" max="100" step="5" value="30">
+      <div class="sliderval" id="body_blank_gap_val">30%</div>
     </div>
 
     <div class="group">
@@ -348,7 +351,7 @@ const S = {
   r:      {text:'', font:'Calibri', size:12, bold:false, italic:false},
   subj:   {text:'', font:'Calibri', size:12, bold:false, italic:false},
   sal:    {text:'', font:'Calibri', size:12, bold:false, italic:false},
-  body:   {text:'', font:'Calibri', size:12, bold:false, italic:false},
+  body:   {text:'', font:'Calibri', size:12, bold:false, italic:false, blankGap:0.3},
   c:      {line1:'', line2:'', font:'Calibri', size:12, bold:false, italic:false},
   sigOffsetX: 0,
   sigOffsetY: 0
@@ -389,11 +392,12 @@ function wrapLines(context, text, maxWidth){
   return lines;
 }
 
-function drawParagraphs(context, text, x, y, maxWidth, lh){
+function drawParagraphs(context, text, x, y, maxWidth, lh, blankGap){
+  if(blankGap === undefined) blankGap = 0.3;
   const paragraphs = text.split('\n');
   let cy = y;
   for(const para of paragraphs){
-    if(para.trim() === ''){ cy += lh * 0.3; continue; }
+    if(para.trim() === ''){ cy += lh * blankGap; continue; }
     const lines = wrapLines(context, para, maxWidth);
     for(const line of lines){ context.fillText(line, x, cy); cy += lh; }
     cy += lh * 0.1;
@@ -444,7 +448,7 @@ function draw(){
 
   if(S.body.text){
     ctx.font = fontStr(S.body);
-    cy = drawParagraphs(ctx, S.body.text, LEFT, cy, WIDTH, lineHeightPx(S.body));
+    cy = drawParagraphs(ctx, S.body.text, LEFT, cy, WIDTH, lineHeightPx(S.body), S.body.blankGap);
     cy += 20;
   }
 
@@ -671,6 +675,14 @@ salChoice.addEventListener('change', () => {
 });
 salCustom.addEventListener('input', () => { S.sal.text = salCustom.value; scheduleDraw(); });
 
+const bodyBlankGapInp = document.getElementById('body_blank_gap');
+const bodyBlankGapVal = document.getElementById('body_blank_gap_val');
+bodyBlankGapInp.addEventListener('input', () => {
+  S.body.blankGap = (parseInt(bodyBlankGapInp.value, 10) || 0) / 100;
+  bodyBlankGapVal.textContent = bodyBlankGapInp.value + '%';
+  scheduleDraw();
+});
+
 const sigOffsetXInp = document.getElementById('sig_offset_x');
 const sigOffsetXVal = document.getElementById('sig_offset_x_val');
 sigOffsetXInp.addEventListener('input', () => {
@@ -790,6 +802,7 @@ document.getElementById('clearBtn').addEventListener('click', () => {
   c2Choice.value = 'Yours sincerely,'; document.getElementById('c2_custom').value=''; document.getElementById('c2_custom').style.display='none';
   S.date.text=''; S.r.text='';
   S.subj.text=''; S.sal.text='Respected Sir/Madam,'; S.body.text=''; S.c.line1='Thanking you,'; S.c.line2='Yours sincerely,';
+  S.body.blankGap = 0.3; bodyBlankGapInp.value = 30; bodyBlankGapVal.textContent = '30%';
   S.sigOffsetX = 0; sigOffsetXInp.value = 0; sigOffsetXVal.textContent = '0 px';
   S.sigOffsetY = 0; sigOffsetYInp.value = 0; sigOffsetYVal.textContent = '0 px';
   draw();
