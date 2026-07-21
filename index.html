@@ -72,6 +72,12 @@
   .filename-row{display:flex; gap:8px; align-items:center; margin-top:6px;}
   .filename-row input{flex:1;}
   .sliderval{font-size:12px; color:var(--blue); font-weight:700; text-align:center; margin-top:4px;}
+  .pagetab{
+    padding:8px 14px; border-radius:7px; border:1px solid #cfd6e4; background:#fff; cursor:pointer;
+    font-size:13px; font-weight:600; color:#555;
+  }
+  .pagetab.active{background:var(--blue); border-color:var(--blue); color:#fff;}
+  .pagelabel{font-size:12px; color:#666; font-weight:600; margin-bottom:-4px;}
   footer{text-align:center; font-size:11px; color:#888; padding:14px;}
   @media (max-width:900px){
     .panel{width:100%; max-height:none; border-right:none; border-bottom:1px solid var(--line);}
@@ -205,6 +211,19 @@ Mumbai."></textarea>
       </div>
     </div>
 
+    <div class="group" style="background:#f0f7ff; border-color:#b8d4f5;">
+      <h3>Pages</h3>
+      <div class="note" style="margin-top:0;">Tick a page to edit it. The Body text below always applies to whichever page is ticked.</div>
+      <div id="pageTabs" style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;"></div>
+      <div class="btnbar">
+        <button class="btn btn-ghost" id="addPageBtn" type="button">+ Add Page</button>
+        <button class="btn btn-ghost" id="removePageBtn" type="button">− Remove This Page</button>
+      </div>
+      <label style="margin-top:4px;">
+        <input type="checkbox" id="page_show_closing"> Show closing lines &amp; stamp/signature on this page
+      </label>
+    </div>
+
     <div class="group">
       <h3>Body</h3>
       <textarea id="body_text" rows="9" placeholder="Write the letter body here. Leave a blank line between paragraphs."></textarea>
@@ -272,13 +291,7 @@ Mumbai."></textarea>
         <input type="checkbox" id="show_stamp" checked> Include Stamp &amp; Signature
       </label>
       <div style="margin-top:12px; padding:10px; background:#f9f9f9; border-radius:6px;">
-        <label style="display:block; font-weight:bold; margin-bottom:8px; font-size:13px;">Show stamp on:</label>
-        <label style="display:block; margin:6px 0;">
-          <input type="checkbox" id="stamp_page1" checked> Page 1
-        </label>
-        <label style="display:block; margin:6px 0;">
-          <input type="checkbox" id="stamp_page2"> Page 2
-        </label>
+        <label style="display:block; font-size:12px; color:#666;">Use the "Show closing lines &amp; stamp/signature on this page" checkbox in the Pages section above to choose which page(s) show the stamp.</label>
       </div>
       <div class="note">Positions itself automatically below your closing lines. Use these sliders to nudge it left/right and up/down.</div>
       <label>Left ⟷ Right</label>
@@ -311,9 +324,7 @@ Mumbai."></textarea>
     </div>
   </div>
 
-  <div class="preview">
-    <canvas id="cv" width="2484" height="3512"></canvas>
-  </div>
+  <div class="preview" id="previewContainer"></div>
 </div>
 
 <footer>Positive Change Foundation — Letterhead Generator — works fully offline</footer>
@@ -351,14 +362,22 @@ const S = {
   r:      {text:'', font:'Calibri', size:12, bold:false, italic:false},
   subj:   {text:'', font:'Calibri', size:12, bold:false, italic:false},
   sal:    {text:'', font:'Calibri', size:12, bold:false, italic:false},
-  body:   {text:'', font:'Calibri', size:12, bold:false, italic:false, blankGap:0.3},
   c:      {line1:'', line2:'', font:'Calibri', size:12, bold:false, italic:false},
   sigOffsetX: 0,
   sigOffsetY: 0
 };
 
-const cv = document.getElementById('cv');
-const ctx = cv.getContext('2d');
+function makePage(showClosing){
+  return {
+    body: {text:'', font:'Calibri', size:12, bold:false, italic:false, blankGap:0.3},
+    showClosing: showClosing !== undefined ? showClosing : true
+  };
+}
+
+let PAGES = [ makePage(true) ];
+let activePage = 0;
+let canvases = []; // canvas DOM elements, one per page
+
 const bgImg = new Image();
 const stampImg = new Image();
 let bgLoaded = false, stampLoaded = false;
@@ -366,7 +385,7 @@ bgImg.onload = () => { bgLoaded = true; maybeDraw(); };
 stampImg.onload = () => { stampLoaded = true; maybeDraw(); };
 bgImg.src = IMG_DATA_URL;
 stampImg.src = STAMP_DATA_URL;
-function maybeDraw(){ if(bgLoaded && stampLoaded) draw(); }
+function maybeDraw(){ if(bgLoaded && stampLoaded) renderAllPages(); }
 
 function fontStr(o){
   const px = Math.round(o.size * PT_TO_PX);
@@ -405,7 +424,10 @@ function drawParagraphs(context, text, x, y, maxWidth, lh, blankGap){
   return cy;
 }
 
-function draw(){
+function drawPageToCanvas(pageIndex, canvas){
+  const ctx = canvas.getContext('2d');
+  const page = PAGES[pageIndex];
+
   ctx.clearRect(0,0,CANVAS_W,CANVAS_H);
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
@@ -414,79 +436,123 @@ function draw(){
   ctx.fillStyle = '#1a1a1a';
   ctx.textBaseline = 'alphabetic';
 
-  // Date (fixed, top right)
-  ctx.textAlign = 'right';
-  ctx.font = fontStr(S.date);
-  ctx.fillText(S.date.text || '', DATE_RIGHT, DATE_BASELINE);
-
-  // Content flow
-  ctx.textAlign = 'left';
   let cy = CONTENT_START_Y;
 
-  ctx.font = fontStr(S.r);
-  const recipientLines = (S.r.text || '').split('\n').map(l => l.trim()).filter(l => l);
-  if(recipientLines.length){
-    ctx.fillText('To,', LEFT, cy);
-    cy += lineHeightPx(S.r, true);
-    recipientLines.forEach(t => {
-      wrapLines(ctx, t, WIDTH).forEach(l => { ctx.fillText(l, LEFT, cy); cy += lineHeightPx(S.r, true); });
-    });
-    cy += 25;
+  if(pageIndex === 0){
+    // Date (fixed, top right) - only on page 1
+    ctx.textAlign = 'right';
+    ctx.font = fontStr(S.date);
+    ctx.fillText(S.date.text || '', DATE_RIGHT, DATE_BASELINE);
+
+    ctx.textAlign = 'left';
+
+    ctx.font = fontStr(S.r);
+    const recipientLines = (S.r.text || '').split('\n').map(l => l.trim()).filter(l => l);
+    if(recipientLines.length){
+      ctx.fillText('To,', LEFT, cy);
+      cy += lineHeightPx(S.r, true);
+      recipientLines.forEach(t => {
+        wrapLines(ctx, t, WIDTH).forEach(l => { ctx.fillText(l, LEFT, cy); cy += lineHeightPx(S.r, true); });
+      });
+      cy += 25;
+    }
+
+    if(S.subj.text){
+      ctx.font = fontStr(S.subj);
+      wrapLines(ctx, 'Subject: ' + S.subj.text, WIDTH).forEach(l => { ctx.fillText(l, LEFT, cy); cy += lineHeightPx(S.subj); });
+      cy += 20;
+    }
+
+    if(S.sal.text){
+      ctx.font = fontStr(S.sal);
+      wrapLines(ctx, S.sal.text, WIDTH).forEach(l => { ctx.fillText(l, LEFT, cy); cy += lineHeightPx(S.sal); });
+      cy += 15;
+    }
+  } else {
+    ctx.textAlign = 'left';
   }
 
-  if(S.subj.text){
-    ctx.font = fontStr(S.subj);
-    wrapLines(ctx, 'Subject: ' + S.subj.text, WIDTH).forEach(l => { ctx.fillText(l, LEFT, cy); cy += lineHeightPx(S.subj); });
+  if(page.body.text){
+    ctx.font = fontStr(page.body);
+    cy = drawParagraphs(ctx, page.body.text, LEFT, cy, WIDTH, lineHeightPx(page.body), page.body.blankGap);
     cy += 20;
   }
 
-  if(S.sal.text){
-    ctx.font = fontStr(S.sal);
-    wrapLines(ctx, S.sal.text, WIDTH).forEach(l => { ctx.fillText(l, LEFT, cy); cy += lineHeightPx(S.sal); });
-    cy += 15;
+  if(page.showClosing){
+    if(S.c.line1 || S.c.line2){
+      ctx.font = fontStr(S.c);
+      if(S.c.line1){ ctx.fillText(S.c.line1, LEFT, cy); cy += lineHeightPx(S.c, true); }
+      if(S.c.line2){ ctx.fillText(S.c.line2, LEFT, cy); cy += lineHeightPx(S.c, true); }
+    }
+
+    // Signature block: stamp + fixed name/title/org, auto-positioned + manual nudge (X and Y)
+    let sigY = Math.max(cy + 40, 1200) + S.sigOffsetY;
+    const blockH = STAMP_H + 230;
+    if(sigY + blockH > SAFE_BOTTOM){ sigY = SAFE_BOTTOM - blockH; }
+    const warnEl = document.getElementById('sigWarn');
+    if(pageIndex === activePage && warnEl){
+      warnEl.style.display = (Math.max(cy + 40, 1200) + S.sigOffsetY + blockH > SAFE_BOTTOM) ? 'block' : 'none';
+    }
+
+    const sigX = SIG_X + S.sigOffsetX;
+    const sigTextX = LEFT + S.sigOffsetX;
+
+    const showStamp = document.getElementById('show_stamp')?.checked ?? true;
+
+    if(showStamp){
+      ctx.drawImage(stampImg, sigX, sigY, STAMP_W, STAMP_H);
+      let ty = sigY + STAMP_H + 55;
+      ctx.font = `bold ${Math.round(14*PT_TO_PX)}px ${FONT_STACKS['Calibri']}`;
+      ctx.fillText('Mehmood Hakimi', sigTextX, ty);
+      ty += Math.round(11*PT_TO_PX*1.5);
+      ctx.font = `${Math.round(11*PT_TO_PX)}px ${FONT_STACKS['Calibri']}`;
+      ctx.fillText('Founder & National President', sigTextX, ty);
+      ty += Math.round(11*PT_TO_PX*1.5);
+      ctx.fillText('Positive Change Foundation', sigTextX, ty);
+    }
   }
+}
 
-  if(S.body.text){
-    ctx.font = fontStr(S.body);
-    cy = drawParagraphs(ctx, S.body.text, LEFT, cy, WIDTH, lineHeightPx(S.body), S.body.blankGap);
-    cy += 20;
+function ensureCanvases(){
+  const container = document.getElementById('previewContainer');
+  // Add missing canvases
+  while(canvases.length < PAGES.length){
+    const idx = canvases.length;
+    const wrap = document.createElement('div');
+    wrap.style.display = 'flex';
+    wrap.style.flexDirection = 'column';
+    wrap.style.alignItems = 'center';
+    wrap.style.gap = '6px';
+    const label = document.createElement('div');
+    label.className = 'pagelabel';
+    label.textContent = 'Page ' + (idx + 1);
+    const cvEl = document.createElement('canvas');
+    cvEl.width = CANVAS_W; cvEl.height = CANVAS_H;
+    wrap.appendChild(label);
+    wrap.appendChild(cvEl);
+    container.appendChild(wrap);
+    canvases.push(cvEl);
   }
-
-  if(S.c.line1 || S.c.line2){
-    ctx.font = fontStr(S.c);
-    if(S.c.line1){ ctx.fillText(S.c.line1, LEFT, cy); cy += lineHeightPx(S.c, true); }
-    if(S.c.line2){ ctx.fillText(S.c.line2, LEFT, cy); cy += lineHeightPx(S.c, true); }
+  // Remove extra canvases
+  while(canvases.length > PAGES.length){
+    const cvEl = canvases.pop();
+    if(cvEl.parentElement && cvEl.parentElement.parentElement === container){
+      container.removeChild(cvEl.parentElement);
+    }
   }
+}
 
-  // Signature block: stamp + fixed name/title/org, auto-positioned + manual nudge (X and Y)
-  let sigY = Math.max(cy + 40, 1200) + S.sigOffsetY;
-  const blockH = STAMP_H + 230;
-  if(sigY + blockH > SAFE_BOTTOM){ sigY = SAFE_BOTTOM - blockH; }
-  document.getElementById('sigWarn').style.display = (Math.max(cy + 40, 1200) + S.sigOffsetY + blockH > SAFE_BOTTOM) ? 'block' : 'none';
-
-  const sigX = SIG_X + S.sigOffsetX;
-  const sigTextX = LEFT + S.sigOffsetX;
-
-  // Only draw stamp if checkbox is checked
-  const showStamp = document.getElementById('show_stamp')?.checked ?? true;
-  
-  if(showStamp){
-    ctx.drawImage(stampImg, sigX, sigY, STAMP_W, STAMP_H);
-    let ty = sigY + STAMP_H + 55;
-    ctx.font = `bold ${Math.round(14*PT_TO_PX)}px ${FONT_STACKS['Calibri']}`;
-    ctx.fillText('Mehmood Hakimi', sigTextX, ty);
-    ty += Math.round(11*PT_TO_PX*1.5);
-    ctx.font = `${Math.round(11*PT_TO_PX)}px ${FONT_STACKS['Calibri']}`;
-    ctx.fillText('Founder & National President', sigTextX, ty);
-    ty += Math.round(11*PT_TO_PX*1.5);
-    ctx.fillText('Positive Change Foundation', sigTextX, ty);
+function renderAllPages(){
+  ensureCanvases();
+  for(let i=0; i<PAGES.length; i++){
+    drawPageToCanvas(i, canvases[i]);
   }
 }
 
 let redrawTimer = null;
 function scheduleDraw(){
   clearTimeout(redrawTimer);
-  redrawTimer = setTimeout(draw, 80);
+  redrawTimer = setTimeout(renderAllPages, 80);
 }
 
 function buildFontSelect(sel){
@@ -522,12 +588,89 @@ wireGroup('date', S.date);
 wireGroup('r', S.r);
 wireGroup('subj', S.subj);
 wireGroup('sal', S.sal);
-wireGroup('body', S.body);
 wireGroup('c', S.c);
+
+// Body controls are wired dynamically against PAGES[activePage].body,
+// since the target object changes whenever the active page changes.
+const bodyFontSel = document.getElementById('body_font');
+buildFontSelect(bodyFontSel);
+const bodySizeInp = document.getElementById('body_size');
+const bodyBoldBtn = document.getElementById('body_bold');
+const bodyItalicBtn = document.getElementById('body_italic');
+const bodyTextArea = document.getElementById('body_text');
+const pageShowClosingChk = document.getElementById('page_show_closing');
+
+function refreshBodyControlsFromActivePage(){
+  const b = PAGES[activePage].body;
+  bodyTextArea.value = b.text;
+  bodyFontSel.value = b.font;
+  bodySizeInp.value = b.size;
+  bodyBoldBtn.classList.toggle('active', b.bold);
+  bodyItalicBtn.classList.toggle('active', b.italic);
+  bodyBlankGapInp.value = Math.round(b.blankGap * 100);
+  bodyBlankGapVal.textContent = bodyBlankGapInp.value + '%';
+  pageShowClosingChk.checked = PAGES[activePage].showClosing;
+}
+
+bodyTextArea.addEventListener('input', () => { PAGES[activePage].body.text = bodyTextArea.value; scheduleDraw(); });
+bodyFontSel.addEventListener('change', () => { PAGES[activePage].body.font = bodyFontSel.value; scheduleDraw(); });
+bodySizeInp.addEventListener('input', () => { PAGES[activePage].body.size = parseInt(bodySizeInp.value,10) || PAGES[activePage].body.size; scheduleDraw(); });
+bodyBoldBtn.addEventListener('click', () => {
+  PAGES[activePage].body.bold = !PAGES[activePage].body.bold;
+  bodyBoldBtn.classList.toggle('active', PAGES[activePage].body.bold);
+  scheduleDraw();
+});
+bodyItalicBtn.addEventListener('click', () => {
+  PAGES[activePage].body.italic = !PAGES[activePage].body.italic;
+  bodyItalicBtn.classList.toggle('active', PAGES[activePage].body.italic);
+  scheduleDraw();
+});
+pageShowClosingChk.addEventListener('change', () => {
+  PAGES[activePage].showClosing = pageShowClosingChk.checked;
+  scheduleDraw();
+});
+
+// Page tabs: add/remove/switch
+function refreshPageTabs(){
+  const tabsEl = document.getElementById('pageTabs');
+  tabsEl.innerHTML = '';
+  PAGES.forEach((p, idx) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pagetab' + (idx === activePage ? ' active' : '');
+    btn.textContent = 'Page ' + (idx + 1);
+    btn.addEventListener('click', () => {
+      activePage = idx;
+      refreshPageTabs();
+      refreshBodyControlsFromActivePage();
+    });
+    tabsEl.appendChild(btn);
+  });
+  document.getElementById('removePageBtn').disabled = PAGES.length <= 1;
+}
+
+document.getElementById('addPageBtn').addEventListener('click', () => {
+  PAGES.push(makePage(false));
+  activePage = PAGES.length - 1;
+  refreshPageTabs();
+  refreshBodyControlsFromActivePage();
+  scheduleDraw();
+});
+
+document.getElementById('removePageBtn').addEventListener('click', () => {
+  if(PAGES.length <= 1) return;
+  PAGES.splice(activePage, 1);
+  activePage = Math.max(0, activePage - 1);
+  refreshPageTabs();
+  refreshBodyControlsFromActivePage();
+  scheduleDraw();
+});
+
+refreshPageTabs();
 
 document.getElementById('r_block').addEventListener('input', e => { S.r.text = e.target.value; scheduleDraw(); });
 document.getElementById('subj_text').addEventListener('input', e => { S.subj.text = e.target.value; scheduleDraw(); });
-document.getElementById('body_text').addEventListener('input', e => { S.body.text = e.target.value; scheduleDraw(); });
+
 function wireClosingChoice(choiceId, customId, key){
   const choice = document.getElementById(choiceId);
   const custom = document.getElementById(customId);
@@ -632,7 +775,7 @@ document.getElementById('parseBtn').addEventListener('click', () => {
   setField('subj_text', p.subject);
 
   setDropdownOrCustom(salChoice, salCustom, salCustomLabel, p.salutation, v => S.sal.text = v);
-  S.body.text = p.body;
+  PAGES[activePage].body.text = p.body;
   setField('body_text', p.body);
 
   if(p.closing1){
@@ -641,7 +784,7 @@ document.getElementById('parseBtn').addEventListener('click', () => {
   if(p.closing2){
     setDropdownOrCustom(c2Choice, document.getElementById('c2_custom'), null, p.closing2, v => S.c.line2 = v);
   }
-  draw();
+  renderAllPages();
 });
 
 // Date picker -> formatted text
@@ -678,7 +821,7 @@ salCustom.addEventListener('input', () => { S.sal.text = salCustom.value; schedu
 const bodyBlankGapInp = document.getElementById('body_blank_gap');
 const bodyBlankGapVal = document.getElementById('body_blank_gap_val');
 bodyBlankGapInp.addEventListener('input', () => {
-  S.body.blankGap = (parseInt(bodyBlankGapInp.value, 10) || 0) / 100;
+  PAGES[activePage].body.blankGap = (parseInt(bodyBlankGapInp.value, 10) || 0) / 100;
   bodyBlankGapVal.textContent = bodyBlankGapInp.value + '%';
   scheduleDraw();
 });
@@ -701,8 +844,6 @@ sigOffsetYInp.addEventListener('input', () => {
 
 // Stamp checkbox listeners
 document.getElementById('show_stamp').addEventListener('change', scheduleDraw);
-document.getElementById('stamp_page1').addEventListener('change', scheduleDraw);
-document.getElementById('stamp_page2').addEventListener('change', scheduleDraw);
 
 function downloadBlob(blob, filename){
   const url = URL.createObjectURL(blob);
@@ -713,27 +854,30 @@ function downloadBlob(blob, filename){
 }
 
 document.getElementById('downloadPng').addEventListener('click', () => {
-  draw();
+  renderAllPages();
   const name = (document.getElementById('filename').value || 'PCF_Letter').trim();
-  cv.toBlob(blob => downloadBlob(blob, name + '.png'), 'image/png');
+  canvases.forEach((cvEl, idx) => {
+    const suffix = canvases.length > 1 ? ('_page' + (idx + 1)) : '';
+    cvEl.toBlob(blob => downloadBlob(blob, name + suffix + '.png'), 'image/png');
+  });
 });
 
 document.getElementById('downloadPdf').addEventListener('click', () => {
-  draw();
+  renderAllPages();
   const name = (document.getElementById('filename').value || 'PCF_Letter').trim();
-  cv.toBlob(blob => {
-    blob.arrayBuffer().then(buf => {
-      const jpegBytes = new Uint8Array(buf);
-      const pdfBytes = buildPdf(jpegBytes, cv.width, cv.height);
-      downloadBlob(new Blob([pdfBytes], {type:'application/pdf'}), name + '.pdf');
-    });
-  }, 'image/jpeg', 0.95);
+  const jpegPromises = canvases.map(cvEl => new Promise(resolve => {
+    cvEl.toBlob(blob => {
+      blob.arrayBuffer().then(buf => resolve({ jpegBytes: new Uint8Array(buf), pxW: cvEl.width, pxH: cvEl.height }));
+    }, 'image/jpeg', 0.95);
+  }));
+  Promise.all(jpegPromises).then(pagesData => {
+    const pdfBytes = buildMultiPagePdf(pagesData);
+    downloadBlob(new Blob([pdfBytes], {type:'application/pdf'}), name + '.pdf');
+  });
 });
 
-function buildPdf(jpegBytes, pxW, pxH){
+function buildMultiPagePdf(pagesData){
   const dpi = 300;
-  const ptW = (pxW / dpi * 72).toFixed(2);
-  const ptH = (pxH / dpi * 72).toFixed(2);
   const enc = new TextEncoder();
   const chunks = [];
   let offset = 0;
@@ -743,25 +887,47 @@ function buildPdf(jpegBytes, pxW, pxH){
     chunks.push(bytes);
     offset += bytes.length;
   }
+  const n = pagesData.length;
+  const pageObjNums = [];
+  for(let i=0;i<n;i++){ pageObjNums.push(3 + i*3); }
+  const kids = pageObjNums.map(num => num + ' 0 R').join(' ');
+
   push('%PDF-1.4\n');
+
   offsets[1] = offset;
   push('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+
   offsets[2] = offset;
-  push('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
-  offsets[3] = offset;
-  push('3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + ptW + ' ' + ptH + '] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n');
-  offsets[4] = offset;
-  push('4 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + pxW + ' /Height ' + pxH + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + jpegBytes.length + ' >>\nstream\n');
-  push(jpegBytes);
-  push('\nendstream\nendobj\n');
-  const content = 'q ' + ptW + ' 0 0 ' + ptH + ' 0 0 cm /Im0 Do Q';
-  offsets[5] = offset;
-  push('5 0 obj\n<< /Length ' + content.length + ' >>\nstream\n' + content + '\nendstream\nendobj\n');
+  push('2 0 obj\n<< /Type /Pages /Kids [' + kids + '] /Count ' + n + ' >>\nendobj\n');
+
+  for(let i=0;i<n;i++){
+    const { jpegBytes, pxW, pxH } = pagesData[i];
+    const ptW = (pxW / dpi * 72).toFixed(2);
+    const ptH = (pxH / dpi * 72).toFixed(2);
+    const pageObj = pageObjNums[i];
+    const imgObj = pageObj + 1;
+    const contentObj = pageObj + 2;
+
+    offsets[pageObj] = offset;
+    push(pageObj + ' 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + ptW + ' ' + ptH + '] /Resources << /XObject << /Im0 ' + imgObj + ' 0 R >> >> /Contents ' + contentObj + ' 0 R >>\nendobj\n');
+
+    offsets[imgObj] = offset;
+    push(imgObj + ' 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + pxW + ' /Height ' + pxH + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + jpegBytes.length + ' >>\nstream\n');
+    push(jpegBytes);
+    push('\nendstream\nendobj\n');
+
+    const content = 'q ' + ptW + ' 0 0 ' + ptH + ' 0 0 cm /Im0 Do Q';
+    offsets[contentObj] = offset;
+    push(contentObj + ' 0 obj\n<< /Length ' + content.length + ' >>\nstream\n' + content + '\nendstream\nendobj\n');
+  }
+
+  const totalObjs = 2 + n * 3;
   const xrefOffset = offset;
-  let xref = 'xref\n0 6\n0000000000 65535 f \n';
-  for(let i=1;i<=5;i++){ xref += String(offsets[i]).padStart(10,'0') + ' 00000 n \n'; }
+  let xref = 'xref\n0 ' + (totalObjs + 1) + '\n0000000000 65535 f \n';
+  for(let i=1;i<=totalObjs;i++){ xref += String(offsets[i]).padStart(10,'0') + ' 00000 n \n'; }
   push(xref);
-  push('trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n' + xrefOffset + '\n%%EOF');
+  push('trailer\n<< /Size ' + (totalObjs + 1) + ' /Root 1 0 R >>\nstartxref\n' + xrefOffset + '\n%%EOF');
+
   let total = 0;
   for(const c of chunks) total += c.length;
   const out = new Uint8Array(total);
@@ -778,34 +944,45 @@ document.getElementById('loadSampleBtn').addEventListener('click', () => {
   S.subj.text = 'Request for Admission of Miss Kehkasha Fatma to FYJC (Science Stream)';
   S.subj.bold = true; S.subj.italic = true;
   S.sal.text = 'Respected Madam,';
-  S.body.text = 'I, Mehmood Hakimi, respectfully write this letter seeking your kind support for the admission of Miss Kehkasha Fatma, the daughter of my close friend Mr. Mohammed Ali, to the First Year Junior College (FYJC) - Science Stream at Anjuman-I-Islam Dr. M. I. J. Girls High School & Junior College, Bandra, Mumbai.\n\nMiss Kehkasha Fatma has successfully completed her SSC (Std. X) examination with 60.20% marks. She is sincere, disciplined, and highly motivated to pursue her higher secondary education in the Science stream.\n\nI humbly request you to kindly consider her case sympathetically and extend your support in granting her admission to the Science Stream.';
   S.c.line1 = 'Thanking you,';
   S.c.line2 = 'Yours sincerely,';
+
+  // Reset to a single page with the sample body
+  PAGES = [ makePage(true) ];
+  activePage = 0;
+  PAGES[0].body.text = 'I, Mehmood Hakimi, respectfully write this letter seeking your kind support for the admission of Miss Kehkasha Fatma, the daughter of my close friend Mr. Mohammed Ali, to the First Year Junior College (FYJC) - Science Stream at Anjuman-I-Islam Dr. M. I. J. Girls High School & Junior College, Bandra, Mumbai.\n\nMiss Kehkasha Fatma has successfully completed her SSC (Std. X) examination with 60.20% marks. She is sincere, disciplined, and highly motivated to pursue her higher secondary education in the Science stream.\n\nI humbly request you to kindly consider her case sympathetically and extend your support in granting her admission to the Science Stream.';
 
   setField('r_block', S.r.text);
   setField('subj_text', S.subj.text);
   document.getElementById('subj_bold').classList.add('active');
   document.getElementById('subj_italic').classList.add('active');
   salChoice.value = 'Respected Madam,';
-  setField('body_text', S.body.text);
   c1Choice.value = 'Thanking you,'; document.getElementById('c1_custom').style.display='none';
   c2Choice.value = 'Yours sincerely,'; document.getElementById('c2_custom').style.display='none';
-  draw();
+
+  refreshPageTabs();
+  refreshBodyControlsFromActivePage();
+  renderAllPages();
 });
 
 document.getElementById('clearBtn').addEventListener('click', () => {
-  ['r_block','subj_text','body_text'].forEach(id => setField(id, ''));
+  ['r_block','subj_text'].forEach(id => setField(id, ''));
   document.getElementById('date_picker').value = '';
   salChoice.value = 'Respected Sir/Madam,';
   salCustom.value = ''; salCustom.style.display='none'; salCustomLabel.style.display='none';
   c1Choice.value = 'Thanking you,'; document.getElementById('c1_custom').value=''; document.getElementById('c1_custom').style.display='none';
   c2Choice.value = 'Yours sincerely,'; document.getElementById('c2_custom').value=''; document.getElementById('c2_custom').style.display='none';
   S.date.text=''; S.r.text='';
-  S.subj.text=''; S.sal.text='Respected Sir/Madam,'; S.body.text=''; S.c.line1='Thanking you,'; S.c.line2='Yours sincerely,';
-  S.body.blankGap = 0.3; bodyBlankGapInp.value = 30; bodyBlankGapVal.textContent = '30%';
+  S.subj.text=''; S.sal.text='Respected Sir/Madam,'; S.c.line1='Thanking you,'; S.c.line2='Yours sincerely,';
   S.sigOffsetX = 0; sigOffsetXInp.value = 0; sigOffsetXVal.textContent = '0 px';
   S.sigOffsetY = 0; sigOffsetYInp.value = 0; sigOffsetYVal.textContent = '0 px';
-  draw();
+
+  // Reset to a single blank page
+  PAGES = [ makePage(true) ];
+  activePage = 0;
+  refreshPageTabs();
+  refreshBodyControlsFromActivePage();
+  renderAllPages();
 });
 
 // initial defaults
@@ -815,6 +992,8 @@ S.c.line1 = 'Thanking you,';
 S.c.line2 = 'Yours sincerely,';
 c1Choice.value = 'Thanking you,';
 c2Choice.value = 'Yours sincerely,';
+refreshBodyControlsFromActivePage();
+
 </script>
 <script>
 if('serviceWorker' in navigator){
