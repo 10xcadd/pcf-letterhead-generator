@@ -47,6 +47,14 @@
     background:#fff;
   }
   textarea{resize:vertical; min-height:70px; line-height:1.4;}
+  .rich-editable{
+    width:100%; min-height:70px; padding:8px 9px; border:1px solid #cfd6e4; border-radius:7px;
+    font-size:14px; font-family:inherit; line-height:1.4; background:#fff;
+    white-space:pre-wrap; word-wrap:break-word; overflow-y:auto; box-sizing:border-box;
+  }
+  .rich-editable:focus{outline:2px solid var(--blue); outline-offset:-1px;}
+  .rich-editable:empty:before{content:attr(data-placeholder); color:#9aa3b5;}
+  #body_text{min-height:220px;}
   input[type=range]{width:100%;}
   .row{display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-top:8px;}
   .row .col{flex:1; min-width:110px;}
@@ -56,6 +64,7 @@
     font-weight:700; font-size:14px; color:#555;
   }
   .toggle-btn.italic{font-style:italic;}
+  .toggle-btn.underline{text-decoration:underline;}
   .toggle-btn.active{background:var(--blue); border-color:var(--blue); color:#fff;}
   .btnbar{display:flex; gap:10px; flex-wrap:wrap; margin:14px 0 6px;}
   .btn{
@@ -141,10 +150,7 @@ Yours sincerely,"></textarea>
     <div class="group">
       <h3>To (Recipient Block)</h3>
       <label>Type or paste — one line each (name, designation, organisation, address...). Paste all lines at once directly from anywhere.</label>
-      <textarea id="r_block" rows="4" placeholder="Mr. Abdul Majid Khan (Lala)
-Managing Director
-Al Majid Tours &amp; Travels
-Mumbai."></textarea>
+      <div id="r_block" class="rich-editable" contenteditable="true" data-placeholder="Mr. Abdul Majid Khan (Lala)&#10;Managing Director&#10;Al Majid Tours &amp; Travels&#10;Mumbai."></div>
       <div class="row">
         <div class="col">
           <label>Font</label>
@@ -157,8 +163,12 @@ Mumbai."></textarea>
         <div class="toggles">
           <button class="toggle-btn" id="r_bold" type="button">B</button>
           <button class="toggle-btn italic" id="r_italic" type="button">I</button>
+          <button class="toggle-btn underline" id="r_underline" type="button">U</button>
+          <button class="toggle-btn" id="r_size_down" type="button">▼</button>
+          <button class="toggle-btn" id="r_size_up" type="button">▲</button>
         </div>
       </div>
+      <div class="note">Select any word(s) above, then tap <b>B</b>/<i>I</i>/<u>U</u> to format just that selection, or ▲▼ to resize just that selection.</div>
     </div>
 
     <div class="group">
@@ -226,7 +236,7 @@ Mumbai."></textarea>
 
     <div class="group">
       <h3>Body</h3>
-      <textarea id="body_text" rows="9" placeholder="Write the letter body here. Leave a blank line between paragraphs."></textarea>
+      <div id="body_text" class="rich-editable" contenteditable="true" data-placeholder="Write the letter body here. Leave a blank line between paragraphs. Select any word(s) and tap B or I below to make just that part bold/italic."></div>
       <div class="row">
         <div class="col">
           <label>Font</label>
@@ -239,8 +249,12 @@ Mumbai."></textarea>
         <div class="toggles">
           <button class="toggle-btn" id="body_bold" type="button">B</button>
           <button class="toggle-btn italic" id="body_italic" type="button">I</button>
+          <button class="toggle-btn underline" id="body_underline" type="button">U</button>
+          <button class="toggle-btn" id="body_size_down" type="button">▼</button>
+          <button class="toggle-btn" id="body_size_up" type="button">▲</button>
         </div>
       </div>
+      <div class="note">Select any word(s) in the body above, then tap <b>B</b>/<i>I</i>/<u>U</u> to format just that selection, or ▲▼ to resize just that selection.</div>
       <div class="note">Blank line gap (space taken by an empty line when you press Enter twice between paragraphs). Lower this if paragraph breaks are eating too much space.</div>
       <input type="range" id="body_blank_gap" min="0" max="100" step="5" value="30">
       <div class="sliderval" id="body_blank_gap_val">30%</div>
@@ -359,7 +373,7 @@ const SIG_X = 200;
 
 const S = {
   date:   {text:'', font:'Calibri', size:12, bold:false, italic:false},
-  r:      {text:'', font:'Calibri', size:12, bold:false, italic:false},
+  r:      {html:'', font:'Calibri', size:12},
   subj:   {text:'', font:'Calibri', size:12, bold:false, italic:false},
   sal:    {text:'', font:'Calibri', size:12, bold:false, italic:false},
   c:      {line1:'', line2:'', font:'Calibri', size:12, bold:false, italic:false},
@@ -369,7 +383,7 @@ const S = {
 
 function makePage(showClosing){
   return {
-    body: {text:'', font:'Calibri', size:12, bold:false, italic:false, blankGap:0.3},
+    body: {html:'', font:'Calibri', size:12, blankGap:0.3},
     showClosing: showClosing !== undefined ? showClosing : true
   };
 }
@@ -377,6 +391,7 @@ function makePage(showClosing){
 let PAGES = [ makePage(true) ];
 let activePage = 0;
 let canvases = []; // canvas DOM elements, one per page
+const richParseHost = document.createElement('div'); // detached, used only to parse stored body HTML
 
 const bgImg = new Image();
 const stampImg = new Image();
@@ -411,15 +426,160 @@ function wrapLines(context, text, maxWidth){
   return lines;
 }
 
-function drawParagraphs(context, text, x, y, maxWidth, lh, blankGap){
-  if(blankGap === undefined) blankGap = 0.3;
-  const paragraphs = text.split('\n');
+function fontForRun(bold, italic, family, sizePx){
+  return `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${sizePx}px ${FONT_STACKS[family]}`;
+}
+
+// Parses a contenteditable element's DOM into an array of paragraphs, each
+// paragraph an array of runs: {text, bold, italic, underline, sizePt}.
+// A line break (<br> or block boundary) starts a new paragraph.
+// sizePt is only set on a run if that run sits inside a span the user
+// resized via the size arrows; otherwise it stays undefined (use field default).
+function richHtmlToParagraphs(rootEl){
+  const paragraphs = [];
+  let current = [];
+
+  function pushText(text, bold, italic, underline, sizePt){
+    if(text.length === 0) return;
+    current.push({text, bold, italic, underline, sizePt});
+  }
+  function endParagraph(){
+    paragraphs.push(current);
+    current = [];
+  }
+
+  function walk(node, bold, italic, underline, sizePt){
+    if(node.nodeType === Node.TEXT_NODE){
+      pushText(node.textContent, bold, italic, underline, sizePt);
+      return;
+    }
+    if(node.nodeType !== Node.ELEMENT_NODE) return;
+    const tag = node.tagName;
+    if(tag === 'BR'){
+      endParagraph();
+      return;
+    }
+    let b = bold, it = italic, u = underline, sz = sizePt;
+    if(tag === 'B' || tag === 'STRONG') b = true;
+    if(tag === 'I' || tag === 'EM') it = true;
+    if(tag === 'U') u = true;
+    const style = node.style;
+    if(style){
+      const fw = style.fontWeight;
+      if(fw && (fw === 'bold' || fw === 'bolder' || parseInt(fw,10) >= 600)) b = true;
+      if(style.fontStyle === 'italic') it = true;
+      if(style.textDecoration && style.textDecoration.indexOf('underline') !== -1) u = true;
+    }
+    if(node.dataset && node.dataset.pt){
+      const v = parseFloat(node.dataset.pt);
+      if(!isNaN(v)) sz = v;
+    }
+
+    const isBlock = (tag === 'DIV' || tag === 'P');
+    if(isBlock && node.previousSibling){
+      endParagraph();
+    }
+    Array.from(node.childNodes).forEach(child => walk(child, b, it, u, sz));
+    if(isBlock){
+      endParagraph();
+    }
+  }
+
+  Array.from(rootEl.childNodes).forEach(node => walk(node, false, false, false, undefined));
+  endParagraph();
+  return paragraphs;
+}
+
+function isParagraphBlank(paragraph){
+  return paragraph.every(r => r.text.trim() === '');
+}
+
+// Splits a paragraph's runs into word/space tokens, resolving each token's
+// actual pixel font size (run override in points, else the field default).
+function tokenizeParagraph(paragraph, defaultSizePx){
+  const tokens = [];
+  for(const run of paragraph){
+    const px = run.sizePt ? Math.round(run.sizePt * PT_TO_PX) : defaultSizePx;
+    const parts = run.text.split(/(\s+)/);
+    for(const part of parts){
+      if(part === '') continue;
+      if(/^\s+$/.test(part)){
+        if(tokens.length) tokens[tokens.length - 1].spaceAfter = true;
+        continue;
+      }
+      tokens.push({ text: part, bold: run.bold, italic: run.italic, underline: run.underline, px, spaceAfter: false });
+    }
+  }
+  return tokens;
+}
+
+// Lays out one paragraph's tokens into wrapped lines (word-wrap respecting
+// mixed font sizes), then draws them. Each visual line's height scales with
+// the largest token size on that line, so an enlarged word doesn't overlap
+// the line below it. Returns the y position ready for the next paragraph.
+function drawRichParagraph(ctx, paragraph, x, y, maxWidth, baseLh, family, defaultSizePx, gapRatio){
+  if(gapRatio === undefined) gapRatio = 0.1;
+  const tokens = tokenizeParagraph(paragraph, defaultSizePx);
+  if(tokens.length === 0) return y;
+
+  const lines = [];
+  let currentLine = [], cx = x, curMaxPx = 0;
+  for(const tok of tokens){
+    ctx.font = fontForRun(tok.bold, tok.italic, family, tok.px);
+    tok._w = ctx.measureText(tok.text).width;
+    if(currentLine.length && cx + tok._w > x + maxWidth){
+      lines.push({ tokens: currentLine, maxPx: curMaxPx });
+      currentLine = []; cx = x; curMaxPx = 0;
+    }
+    currentLine.push(tok);
+    cx += tok._w;
+    curMaxPx = Math.max(curMaxPx, tok.px);
+    if(tok.spaceAfter){ cx += ctx.measureText(' ').width; }
+  }
+  if(currentLine.length) lines.push({ tokens: currentLine, maxPx: curMaxPx });
+
   let cy = y;
-  for(const para of paragraphs){
-    if(para.trim() === ''){ cy += lh * blankGap; continue; }
-    const lines = wrapLines(context, para, maxWidth);
-    for(const line of lines){ context.fillText(line, x, cy); cy += lh; }
-    cy += lh * 0.1;
+  const lhRatio = baseLh / defaultSizePx;
+  for(const line of lines){
+    let dx = x;
+    for(const tok of line.tokens){
+      ctx.font = fontForRun(tok.bold, tok.italic, family, tok.px);
+      ctx.fillText(tok.text, dx, cy);
+      if(tok.underline){
+        const off = Math.max(2, Math.round(tok.px * 0.1));
+        const thick = Math.max(1, Math.round(tok.px * 0.05));
+        ctx.save();
+        ctx.lineWidth = thick;
+        ctx.strokeStyle = ctx.fillStyle;
+        ctx.beginPath();
+        ctx.moveTo(dx, cy + off);
+        ctx.lineTo(dx + tok._w, cy + off);
+        ctx.stroke();
+        ctx.restore();
+      }
+      dx += tok._w;
+      if(tok.spaceAfter){ dx += ctx.measureText(' ').width; }
+    }
+    cy += Math.round(line.maxPx * lhRatio);
+  }
+  cy += Math.round(baseLh * gapRatio);
+  return cy;
+}
+
+// Draws every paragraph of a rich-text field. opts:
+//   family, sizePx  - field defaults (required)
+//   blankGap        - if set, blank paragraphs consume this much extra space (used by Body);
+//                      if omitted, blank paragraphs are skipped entirely (used by Recipient, matching old behaviour)
+//   gapRatio        - extra spacing added after each paragraph (default 0.1; Recipient uses 0)
+function drawParagraphs(context, richParagraphs, x, y, maxWidth, lh, opts){
+  opts = opts || {};
+  let cy = y;
+  for(const para of richParagraphs){
+    if(para.length === 0 || isParagraphBlank(para)){
+      if(opts.blankGap !== undefined) cy += lh * opts.blankGap;
+      continue;
+    }
+    cy = drawRichParagraph(context, para, x, cy, maxWidth, lh, opts.family, opts.sizePx, opts.gapRatio);
   }
   return cy;
 }
@@ -446,14 +606,14 @@ function drawPageToCanvas(pageIndex, canvas){
 
     ctx.textAlign = 'left';
 
-    ctx.font = fontStr(S.r);
-    const recipientLines = (S.r.text || '').split('\n').map(l => l.trim()).filter(l => l);
-    if(recipientLines.length){
+    if(S.r.html && S.r.html.trim()){
+      const rSizePx = Math.round(S.r.size * PT_TO_PX);
+      richParseHost.innerHTML = S.r.html;
+      const rParagraphs = richHtmlToParagraphs(richParseHost);
+      ctx.font = fontForRun(false, false, S.r.font, rSizePx);
       ctx.fillText('To,', LEFT, cy);
       cy += lineHeightPx(S.r, true);
-      recipientLines.forEach(t => {
-        wrapLines(ctx, t, WIDTH).forEach(l => { ctx.fillText(l, LEFT, cy); cy += lineHeightPx(S.r, true); });
-      });
+      cy = drawParagraphs(ctx, rParagraphs, LEFT, cy, WIDTH, lineHeightPx(S.r, true), { family: S.r.font, sizePx: rSizePx, gapRatio: 0 });
       cy += 25;
     }
 
@@ -472,9 +632,11 @@ function drawPageToCanvas(pageIndex, canvas){
     ctx.textAlign = 'left';
   }
 
-  if(page.body.text){
-    ctx.font = fontStr(page.body);
-    cy = drawParagraphs(ctx, page.body.text, LEFT, cy, WIDTH, lineHeightPx(page.body), page.body.blankGap);
+  if(page.body.html && page.body.html.trim()){
+    const sizePx = Math.round(page.body.size * PT_TO_PX);
+    richParseHost.innerHTML = page.body.html;
+    const richParagraphs = richHtmlToParagraphs(richParseHost);
+    cy = drawParagraphs(ctx, richParagraphs, LEFT, cy, WIDTH, lineHeightPx(page.body), { family: page.body.font, sizePx: sizePx, blankGap: page.body.blankGap, gapRatio: 0.1 });
     cy += 20;
   }
 
@@ -584,51 +746,141 @@ function wireGroup(prefix, target){
   refreshToggles();
 }
 
+// Wires a contenteditable rich-text field: font/size selects apply to the whole
+// field; Bold/Italic/Underline apply only to the current text selection; the
+// size arrows (▲▼) resize just the current selection and then keep that same
+// span "held" so repeated taps keep growing/shrinking it without re-selecting.
+function setupRichField(ids, getState, onChange){
+  const editable = document.getElementById(ids.editable);
+  const fontSel = document.getElementById(ids.font);
+  buildFontSelect(fontSel);
+  const sizeInp = document.getElementById(ids.size);
+  const boldBtn = document.getElementById(ids.bold);
+  const italicBtn = document.getElementById(ids.italic);
+  const underlineBtn = document.getElementById(ids.underline);
+  const sizeUpBtn = document.getElementById(ids.sizeUp);
+  const sizeDownBtn = document.getElementById(ids.sizeDown);
+
+  try { document.execCommand('defaultParagraphSeparator', false, 'br'); } catch(e){}
+  editable.addEventListener('focus', () => {
+    try { document.execCommand('defaultParagraphSeparator', false, 'br'); } catch(e){}
+  });
+
+  let lastSizeSpan = null;
+
+  editable.addEventListener('input', () => {
+    getState().html = editable.innerHTML;
+    lastSizeSpan = null;
+    onChange();
+  });
+  fontSel.addEventListener('change', () => { getState().font = fontSel.value; onChange(); });
+  sizeInp.addEventListener('input', () => { getState().size = parseInt(sizeInp.value,10) || getState().size; onChange(); });
+
+  function applySelectionFormat(command){
+    const sel = window.getSelection();
+    if(!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if(!editable.contains(range.commonAncestorContainer) || range.collapsed) return;
+    editable.focus();
+    try { document.execCommand(command, false, null); } catch(e){}
+    getState().html = editable.innerHTML;
+    onChange();
+  }
+  boldBtn.addEventListener('click', () => applySelectionFormat('bold'));
+  italicBtn.addEventListener('click', () => applySelectionFormat('italic'));
+  underlineBtn.addEventListener('click', () => applySelectionFormat('underline'));
+
+  function rangeMatchesSpanContents(range, span){
+    if(!span || !document.contains(span)) return false;
+    const r2 = document.createRange();
+    r2.selectNodeContents(span);
+    return range.compareBoundaryPoints(Range.START_TO_START, r2) === 0 &&
+           range.compareBoundaryPoints(Range.END_TO_END, r2) === 0;
+  }
+  function adjustSize(deltaPt){
+    const sel = window.getSelection();
+    if(!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if(!editable.contains(range.commonAncestorContainer)) return;
+
+    if(lastSizeSpan && rangeMatchesSpanContents(range, lastSizeSpan)){
+      const basePt = getState().size || 12;
+      const curPt = parseFloat(lastSizeSpan.dataset.pt) || basePt;
+      const newPt = Math.max(6, Math.min(72, curPt + deltaPt));
+      lastSizeSpan.dataset.pt = newPt;
+      lastSizeSpan.style.fontSize = (newPt / basePt) + 'em';
+    } else {
+      if(range.collapsed) return; // nothing selected — nothing to resize
+      const basePt = getState().size || 12;
+      const newPt = Math.max(6, Math.min(72, basePt + deltaPt));
+      const span = document.createElement('span');
+      span.dataset.pt = newPt;
+      span.style.fontSize = (newPt / basePt) + 'em';
+      try {
+        range.surroundContents(span);
+      } catch(e){
+        const frag = range.extractContents();
+        span.appendChild(frag);
+        range.insertNode(span);
+      }
+      lastSizeSpan = span;
+      const newRange = document.createRange();
+      newRange.selectNodeContents(span);
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+    }
+    getState().html = editable.innerHTML;
+    onChange();
+  }
+  sizeUpBtn.addEventListener('click', () => adjustSize(1));
+  sizeDownBtn.addEventListener('click', () => adjustSize(-1));
+
+  return {
+    refresh(){
+      const st = getState();
+      editable.innerHTML = st.html;
+      fontSel.value = st.font;
+      sizeInp.value = st.size;
+      lastSizeSpan = null;
+    }
+  };
+}
+
 wireGroup('date', S.date);
-wireGroup('r', S.r);
 wireGroup('subj', S.subj);
 wireGroup('sal', S.sal);
 wireGroup('c', S.c);
 
-// Body controls are wired dynamically against PAGES[activePage].body,
-// since the target object changes whenever the active page changes.
+// Body's font/size UI still needs direct access for the blank-gap slider
+// sync in refreshBodyControlsFromActivePage below.
 const bodyFontSel = document.getElementById('body_font');
-buildFontSelect(bodyFontSel);
 const bodySizeInp = document.getElementById('body_size');
-const bodyBoldBtn = document.getElementById('body_bold');
-const bodyItalicBtn = document.getElementById('body_italic');
-const bodyTextArea = document.getElementById('body_text');
 const pageShowClosingChk = document.getElementById('page_show_closing');
 
+const bodyRich = setupRichField(
+  { editable:'body_text', font:'body_font', size:'body_size', bold:'body_bold', italic:'body_italic', underline:'body_underline', sizeUp:'body_size_up', sizeDown:'body_size_down' },
+  () => PAGES[activePage].body,
+  () => scheduleDraw()
+);
+
 function refreshBodyControlsFromActivePage(){
+  bodyRich.refresh();
   const b = PAGES[activePage].body;
-  bodyTextArea.value = b.text;
-  bodyFontSel.value = b.font;
-  bodySizeInp.value = b.size;
-  bodyBoldBtn.classList.toggle('active', b.bold);
-  bodyItalicBtn.classList.toggle('active', b.italic);
   bodyBlankGapInp.value = Math.round(b.blankGap * 100);
   bodyBlankGapVal.textContent = bodyBlankGapInp.value + '%';
   pageShowClosingChk.checked = PAGES[activePage].showClosing;
 }
 
-bodyTextArea.addEventListener('input', () => { PAGES[activePage].body.text = bodyTextArea.value; scheduleDraw(); });
-bodyFontSel.addEventListener('change', () => { PAGES[activePage].body.font = bodyFontSel.value; scheduleDraw(); });
-bodySizeInp.addEventListener('input', () => { PAGES[activePage].body.size = parseInt(bodySizeInp.value,10) || PAGES[activePage].body.size; scheduleDraw(); });
-bodyBoldBtn.addEventListener('click', () => {
-  PAGES[activePage].body.bold = !PAGES[activePage].body.bold;
-  bodyBoldBtn.classList.toggle('active', PAGES[activePage].body.bold);
-  scheduleDraw();
-});
-bodyItalicBtn.addEventListener('click', () => {
-  PAGES[activePage].body.italic = !PAGES[activePage].body.italic;
-  bodyItalicBtn.classList.toggle('active', PAGES[activePage].body.italic);
-  scheduleDraw();
-});
 pageShowClosingChk.addEventListener('change', () => {
   PAGES[activePage].showClosing = pageShowClosingChk.checked;
   scheduleDraw();
 });
+
+const recipientRich = setupRichField(
+  { editable:'r_block', font:'r_font', size:'r_size', bold:'r_bold', italic:'r_italic', underline:'r_underline', sizeUp:'r_size_up', sizeDown:'r_size_down' },
+  () => S.r,
+  () => scheduleDraw()
+);
 
 // Page tabs: add/remove/switch
 function refreshPageTabs(){
@@ -668,7 +920,6 @@ document.getElementById('removePageBtn').addEventListener('click', () => {
 
 refreshPageTabs();
 
-document.getElementById('r_block').addEventListener('input', e => { S.r.text = e.target.value; scheduleDraw(); });
 document.getElementById('subj_text').addEventListener('input', e => { S.subj.text = e.target.value; scheduleDraw(); });
 
 function wireClosingChoice(choiceId, customId, key){
@@ -768,15 +1019,15 @@ document.getElementById('parseBtn').addEventListener('click', () => {
   if(!text.trim()) return;
   const p = parseLetter(text);
 
-  S.r.text = p.recipient;
-  setField('r_block', p.recipient);
+  S.r.html = plainTextToBodyHtml(p.recipient);
+  recipientRich.refresh();
 
   S.subj.text = p.subject;
   setField('subj_text', p.subject);
 
   setDropdownOrCustom(salChoice, salCustom, salCustomLabel, p.salutation, v => S.sal.text = v);
-  PAGES[activePage].body.text = p.body;
-  setField('body_text', p.body);
+  PAGES[activePage].body.html = plainTextToBodyHtml(p.body);
+  bodyRich.refresh();
 
   if(p.closing1){
     setDropdownOrCustom(c1Choice, document.getElementById('c1_custom'), null, p.closing1, v => S.c.line1 = v);
@@ -936,11 +1187,17 @@ function buildMultiPagePdf(pagesData){
   return out;
 }
 
+function escapeHtml(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function plainTextToBodyHtml(text){
+  return text.split('\n').map(line => escapeHtml(line)).join('<br>');
+}
 function setField(id, val){ const el = document.getElementById(id); if(el) el.value = val; }
 
 document.getElementById('loadSampleBtn').addEventListener('click', () => {
   S.date.text = '15th July 2026';
-  S.r.text = 'Dr. Begum Rehana Ahmed,\nExecutive Chairperson,\nAnjuman-I-Islam, Girls Board,\nMumbai.';
+  S.r.html = plainTextToBodyHtml('Dr. Begum Rehana Ahmed,\nExecutive Chairperson,\nAnjuman-I-Islam, Girls Board,\nMumbai.');
   S.subj.text = 'Request for Admission of Miss Kehkasha Fatma to FYJC (Science Stream)';
   S.subj.bold = true; S.subj.italic = true;
   S.sal.text = 'Respected Madam,';
@@ -950,9 +1207,9 @@ document.getElementById('loadSampleBtn').addEventListener('click', () => {
   // Reset to a single page with the sample body
   PAGES = [ makePage(true) ];
   activePage = 0;
-  PAGES[0].body.text = 'I, Mehmood Hakimi, respectfully write this letter seeking your kind support for the admission of Miss Kehkasha Fatma, the daughter of my close friend Mr. Mohammed Ali, to the First Year Junior College (FYJC) - Science Stream at Anjuman-I-Islam Dr. M. I. J. Girls High School & Junior College, Bandra, Mumbai.\n\nMiss Kehkasha Fatma has successfully completed her SSC (Std. X) examination with 60.20% marks. She is sincere, disciplined, and highly motivated to pursue her higher secondary education in the Science stream.\n\nI humbly request you to kindly consider her case sympathetically and extend your support in granting her admission to the Science Stream.';
+  PAGES[0].body.html = plainTextToBodyHtml('I, Mehmood Hakimi, respectfully write this letter seeking your kind support for the admission of Miss Kehkasha Fatma, the daughter of my close friend Mr. Mohammed Ali, to the First Year Junior College (FYJC) - Science Stream at Anjuman-I-Islam Dr. M. I. J. Girls High School & Junior College, Bandra, Mumbai.\n\nMiss Kehkasha Fatma has successfully completed her SSC (Std. X) examination with 60.20% marks. She is sincere, disciplined, and highly motivated to pursue her higher secondary education in the Science stream.\n\nI humbly request you to kindly consider her case sympathetically and extend your support in granting her admission to the Science Stream.');
 
-  setField('r_block', S.r.text);
+  recipientRich.refresh();
   setField('subj_text', S.subj.text);
   document.getElementById('subj_bold').classList.add('active');
   document.getElementById('subj_italic').classList.add('active');
@@ -966,16 +1223,17 @@ document.getElementById('loadSampleBtn').addEventListener('click', () => {
 });
 
 document.getElementById('clearBtn').addEventListener('click', () => {
-  ['r_block','subj_text'].forEach(id => setField(id, ''));
+  setField('subj_text', '');
   document.getElementById('date_picker').value = '';
   salChoice.value = 'Respected Sir/Madam,';
   salCustom.value = ''; salCustom.style.display='none'; salCustomLabel.style.display='none';
   c1Choice.value = 'Thanking you,'; document.getElementById('c1_custom').value=''; document.getElementById('c1_custom').style.display='none';
   c2Choice.value = 'Yours sincerely,'; document.getElementById('c2_custom').value=''; document.getElementById('c2_custom').style.display='none';
-  S.date.text=''; S.r.text='';
+  S.date.text=''; S.r.html='';
   S.subj.text=''; S.sal.text='Respected Sir/Madam,'; S.c.line1='Thanking you,'; S.c.line2='Yours sincerely,';
   S.sigOffsetX = 0; sigOffsetXInp.value = 0; sigOffsetXVal.textContent = '0 px';
   S.sigOffsetY = 0; sigOffsetYInp.value = 0; sigOffsetYVal.textContent = '0 px';
+  recipientRich.refresh();
 
   // Reset to a single blank page
   PAGES = [ makePage(true) ];
@@ -993,6 +1251,7 @@ S.c.line2 = 'Yours sincerely,';
 c1Choice.value = 'Thanking you,';
 c2Choice.value = 'Yours sincerely,';
 refreshBodyControlsFromActivePage();
+recipientRich.refresh();
 
 </script>
 <script>
