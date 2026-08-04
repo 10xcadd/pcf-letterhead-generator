@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pcf-letterhead-v18';
+const CACHE_NAME = 'pcf-letterhead-v20';
 const ASSETS = [
   './',
   './index.html',
